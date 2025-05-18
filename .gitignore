@@ -1,0 +1,4 @@
+build
+.vscode
+.gitattributes
+pico_sdk_import.cmake
