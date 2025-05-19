@@ -30,6 +30,7 @@ void gpio_irq_handler(uint gpio, uint32_t events)
 {
     reset_usb_boot(0, 0);
 }
+// Task para ler os dados do sensor
 void vSensorTask(void *params)
 {
     // Inicializa o ADC
@@ -53,11 +54,12 @@ void vSensorTask(void *params)
         sensor_data.alert = (sensor_data.water_level >= 70) || (sensor_data.rain_volume >= 80);
         
         printf("Water Level: %d, Rain Volume: %d, Alert: %s\n", sensor_data.water_level, sensor_data.rain_volume, sensor_data.alert ? "ON" : "OFF");
-        xQueueSend(xQueueSensorData, &sensor_data,portMAX_DELAY);
+        xQueueOverwrite(xQueueSensorData, &sensor_data);
         vTaskDelay(pdMS_TO_TICKS(200));
     }
 }
 
+// Task para exibir os dados no display OLED
 void vDisplayTask()
 {
     // Inicializa o display OLED
@@ -77,7 +79,7 @@ void vDisplayTask()
     while (true)
     {
         // Recebe os dados mais recentes da fila
-        if (xQueueReceive(xQueueSensorData, &sensor_data, portMAX_DELAY) == pdTRUE) {
+        if (xQueuePeek(xQueueSensorData, &sensor_data, portMAX_DELAY) == pdTRUE) {
             ssd1306_fill(&ssd, false); // Limpa o display
 
             ssd1306_rect(&ssd, 3, 3, 122, 60, true, false);      // Retângulo de borda
@@ -97,6 +99,7 @@ void vDisplayTask()
         vTaskDelay(pdMS_TO_TICKS(200)); // Atualiza a cada 200ms
     }
 }
+// Task para controlar o buzzer
 void vBuzzerTask(void *params)
 {
     pwm_init_buzzer(BUZZER_PIN);
@@ -105,7 +108,7 @@ void vBuzzerTask(void *params)
     while (true)
     {
         // Recebe os dados mais recentes da fila
-        if (xQueueReceive(xQueueSensorData, &sensor_data, portMAX_DELAY) == pdTRUE)
+        if (xQueuePeek(xQueueSensorData, &sensor_data, portMAX_DELAY) == pdTRUE)
         {
             if (sensor_data.alert)
             {
@@ -124,6 +127,7 @@ void vBuzzerTask(void *params)
         }
     }
 }
+// Task para controlar o LED Vermelho
 void vLedRedTask(void *params)
 {
     gpio_init(LED_PIN_RED);
@@ -132,7 +136,7 @@ void vLedRedTask(void *params)
     sensor_data_t sensor_data;
     while (true)
     {
-        if (xQueueReceive(xQueueSensorData, &sensor_data, portMAX_DELAY) == pdTRUE)
+        if (xQueuePeek(xQueueSensorData, &sensor_data, portMAX_DELAY) == pdTRUE)
         {
             if (sensor_data.alert)
             {
@@ -151,6 +155,7 @@ void vLedRedTask(void *params)
         }
     }
 }
+// Task para controlar o LED Verde e Azul
 void vLedGBTask(void *params)
 {
     gpio_init(LED_PIN_GREEN);
@@ -159,23 +164,19 @@ void vLedGBTask(void *params)
     gpio_set_dir(LED_PIN_BLUE, GPIO_OUT);
 
     sensor_data_t sensor_data;
-    bool toggle = false;
 
     while (true)
     {
-        if (xQueueReceive(xQueueSensorData, &sensor_data, portMAX_DELAY) == pdTRUE)
+        if (xQueuePeek(xQueueSensorData, &sensor_data, portMAX_DELAY) == pdTRUE)
         {
             if (!sensor_data.alert)
             {
                 // Alterna entre verde e azul no modo normal
-                if (toggle) {
-                    gpio_put(LED_PIN_GREEN, 1);
-                    gpio_put(LED_PIN_BLUE, 0);
-                } else {
-                    gpio_put(LED_PIN_GREEN, 0);
-                    gpio_put(LED_PIN_BLUE, 1);
-                }
-                toggle = !toggle;
+                gpio_put(LED_PIN_BLUE, 1);
+                gpio_put(LED_PIN_GREEN, 0);
+                vTaskDelay(pdMS_TO_TICKS(500));
+                gpio_put(LED_PIN_BLUE, 0);
+                gpio_put(LED_PIN_GREEN, 1);
                 vTaskDelay(pdMS_TO_TICKS(500));
             }
             else
@@ -188,6 +189,7 @@ void vLedGBTask(void *params)
         }
     }
 }
+// Task para controlar a matriz de LEDs
 void vMatrixTask() {
     // Inicializa o PIO e carrega o programa
     PIO pio = pio0;
@@ -197,12 +199,12 @@ void vMatrixTask() {
 
     sensor_data_t sensor_data;
     while (true) {
-        if (xQueueReceive(xQueueSensorData, &sensor_data, portMAX_DELAY) == pdTRUE) {
+        if (xQueuePeek(xQueueSensorData, &sensor_data, portMAX_DELAY) == pdTRUE) {
             if (sensor_data.alert) {
-                // Exibe símbolo de perigo (vermelho) na matriz em modo alerta
+                // Exibe símbolo de perigo (amarelo e vermelho) na matriz em modo alerta
                 pio_drawn(ALERT_PATTERN, 0, pio, sm);
             } else {
-                // Exibe padrão normal (verde)
+                // Exibe padrão normal (vazio)
                 pio_drawn(NORMAL_PATTERN, 0, pio, sm);
             }
         }
@@ -219,8 +221,8 @@ int main()
 
     stdio_init_all();
 
-    // Cria a fila para compartilhamento de valor do joystick
-    xQueueSensorData = xQueueCreate(5, sizeof(sensor_data_t));
+    // Criação da fila para compartilhar dados entre tarefas
+    xQueueSensorData = xQueueCreate(1, sizeof(sensor_data_t));
 
     // Criação das tasks principais do sistema
     xTaskCreate(vSensorTask, "Sensor Task", 256, NULL, 2, NULL);
