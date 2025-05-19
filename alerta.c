@@ -124,8 +124,6 @@ void vBuzzerTask(void *params)
         }
     }
 }
-
-
 void vLedRedTask(void *params)
 {
     gpio_init(LED_PIN_RED);
@@ -190,8 +188,6 @@ void vLedGBTask(void *params)
         }
     }
 }
-
-
 void vMatrixTask() {
     // Inicializa o PIO e carrega o programa
     PIO pio = pio0;
@@ -213,9 +209,6 @@ void vMatrixTask() {
         vTaskDelay(pdMS_TO_TICKS(100)); // Atualiza o padrão a cada 100ms
     }
 }
-
-
-
 int main()
 {
     // Ativa BOOTSEL via botão
